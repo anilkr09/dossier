@@ -7,6 +7,7 @@ import {
   FUNNEL_STAGES,
   heardBack,
   isInProgress,
+  isMoveBack,
   STATUSES,
   statusInfo,
   undoChange,
@@ -112,6 +113,18 @@ describe("advance", () => {
   it("keeps a draft the user declined out of the funnel, until it's sent after all", () => {
     expect(moves(draft, S.DECLINED)).toEqual({ status: S.DECLINED, furthestStage: null, sentAt: null });
     expect(moves(draft, S.DECLINED, S.SENT)).toEqual({ status: S.SENT, furthestStage: "SENT", sentAt: now });
+  });
+
+  it("tells a move back a stage, which the UI confirms, from a move forward or a reopening", () => {
+    expect(isMoveBack(S.INTERVIEW, S.SENT)).toBe(true);
+    expect(isMoveBack(S.SENT, S.DRAFT)).toBe(true);
+    expect(isMoveBack(S.ACCEPTED, S.OFFER)).toBe(true);
+    expect(isMoveBack(S.SENT, S.INTERVIEW)).toBe(false);
+    expect(isMoveBack(S.DRAFT, S.OFFER)).toBe(false);
+    // Rejected and Declined aren't on the way forward: closing or reopening isn't a move back.
+    expect(isMoveBack(S.INTERVIEW, S.REJECTED)).toBe(false);
+    expect(isMoveBack(S.REJECTED, S.SCREENING)).toBe(false);
+    expect(isMoveBack(S.DECLINED, S.DRAFT)).toBe(false);
   });
 
   it("records the previous fields so the change can be undone", () => {

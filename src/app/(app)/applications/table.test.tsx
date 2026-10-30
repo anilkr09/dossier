@@ -101,4 +101,20 @@ describe("the table (E9-3)", () => {
     expect(router.push).toHaveBeenCalledWith("/applications/kestrel");
     expect(within(kestrel).getByRole("link", { name: "Product Designer, Mobile" })).toHaveAttribute("href", "/applications/kestrel");
   });
+
+  it("asks before a row's status goes back a stage", async () => {
+    const user = userEvent.setup();
+    open();
+    const [kestrel] = screen.getAllByRole("row").slice(1);
+    await user.selectOptions(within(kestrel).getByRole("combobox"), "DRAFT");
+
+    const dialog = screen.getByRole("alertdialog", { name: "Move back to Draft?" });
+    expect(dialog).toHaveTextContent("It will count as not sent");
+    expect(changeStatus).not.toHaveBeenCalled();
+    // The open dialog hides the page behind it from assistive tech.
+    expect(within(kestrel).getByRole("combobox", { hidden: true })).toHaveValue("SENT");
+
+    await user.click(within(dialog).getByRole("button", { name: "Move back to Draft" }));
+    expect(changeStatus).toHaveBeenCalledWith("kestrel", "DRAFT");
+  });
 });

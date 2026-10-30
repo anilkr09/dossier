@@ -3,6 +3,7 @@
 import { useOptimistic, useRef, useState, useTransition } from "react";
 
 import { changeStatus } from "@/components/change-status";
+import { useMoveBackConfirm } from "@/components/move-back-confirm";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StatusDot } from "@/components/ui/status-dot";
 import { ApplicationStatus } from "@/generated/prisma/enums";
-import { STATUSES, statusInfo } from "@/lib/status";
+import { isMoveBack, STATUSES, statusInfo } from "@/lib/status";
 
 import { InterviewDate } from "./interview-date";
 
@@ -23,7 +24,7 @@ import { InterviewDate } from "./interview-date";
  * application is a draft, and the next interview's date while it's in
  * Interview (E9-9). The new status shows at once; the server's answer (and
  * its toast with Undo) follows. Moving to Interview asks for the date once
- * the menu has closed.
+ * the menu has closed. Moving back a stage asks first, since it lowers the funnel.
  */
 export function StatusControl({
   id,
@@ -42,13 +43,18 @@ export function StatusControl({
   const askForDate = useRef(false);
   const { label } = statusInfo(shown);
 
+  const [confirmMove, moveBackDialog] = useMoveBackConfirm();
+
   const move = (to: ApplicationStatus) => {
     if (to === shown) return;
-    askForDate.current = to === ApplicationStatus.INTERVIEW;
-    startTransition(async () => {
-      show(to);
-      await changeStatus(id, to);
-    });
+    // A move back waits for its dialog, by when the menu has closed: no date to ask for then.
+    askForDate.current = to === ApplicationStatus.INTERVIEW && !isMoveBack(shown, to);
+    confirmMove(shown, to, () =>
+      startTransition(async () => {
+        show(to);
+        await changeStatus(id, to);
+      }),
+    );
   };
 
   return (
@@ -97,6 +103,7 @@ export function StatusControl({
         />
       )}
       {shown === ApplicationStatus.DRAFT && <Button onClick={() => move(ApplicationStatus.SENT)}>Mark as sent</Button>}
+      {moveBackDialog}
     </>
   );
 }

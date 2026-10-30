@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
 
 import { changeStatus } from "@/components/change-status";
+import { useMoveBackConfirm } from "@/components/move-back-confirm";
 
 import { PageHeader } from "@/components/page-header";
 import { buttonClassName } from "@/components/ui/button";
@@ -61,11 +62,15 @@ export function ApplicationsScreen({ params, rows, counts, summary, empty, archi
     current.map((row) => (row.id === id ? { ...row, status: to, updated: "Today", updatedAt: Date.now() } : row)),
   );
   const [, startMove] = useTransition();
+  // Moving back a stage, however it's done (drag, select or menu), asks first.
+  const [confirmMove, moveBackDialog] = useMoveBackConfirm();
   const move = (row: ApplicationRow, to: ApplicationStatus) =>
-    startMove(async () => {
-      showMove({ id: row.id, to });
-      await changeStatus(row.id, to);
-    });
+    confirmMove(row.status, to, () =>
+      startMove(async () => {
+        showMove({ id: row.id, to });
+        await changeStatus(row.id, to);
+      }),
+    );
 
   // Each view, filter or sort gets its own history entry, so Back returns to
   // it, and is remembered for the next visit (LST-7) before the page asks
@@ -172,6 +177,7 @@ export function ApplicationsScreen({ params, rows, counts, summary, empty, archi
           </div>
         </>
       )}
+      {moveBackDialog}
     </div>
   );
 }

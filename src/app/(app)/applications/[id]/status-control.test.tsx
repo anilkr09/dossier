@@ -86,6 +86,33 @@ describe("the status control (E8-1)", () => {
     expect(changeStatus).not.toHaveBeenCalled();
   });
 
+  it("asks before moving back a stage, and moves only when that's confirmed", async () => {
+    const user = userEvent.setup();
+    render(<StatusControl id="app-1" status="INTERVIEW" />);
+
+    await user.click(screen.getByRole("button", { name: "Status: Interview" }));
+    await user.click(screen.getByRole("menuitemradio", { name: /Sent/ }));
+    const dialog = screen.getByRole("alertdialog", { name: "Move back to Sent?" });
+    expect(dialog).toHaveTextContent("Your dashboard's funnel will count it as reaching Sent and no further.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(changeStatus).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Status: Interview" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Status: Interview" }));
+    await user.click(screen.getByRole("menuitemradio", { name: /Sent/ }));
+    await user.click(screen.getByRole("button", { name: "Move back to Sent" }));
+    expect(changeStatus).toHaveBeenCalledWith("app-1", "SENT");
+  });
+
+  it("moves forward, closes and reopens without asking", async () => {
+    const user = userEvent.setup();
+    render(<StatusControl id="app-1" status="REJECTED" />);
+    await user.click(screen.getByRole("button", { name: "Status: Rejected" }));
+    await user.click(screen.getByRole("menuitemradio", { name: /Screening/ }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(changeStatus).toHaveBeenCalledWith("app-1", "SCREENING");
+  });
+
   it("offers “Mark as sent” only on a draft", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<StatusControl id="app-1" status="DRAFT" />);

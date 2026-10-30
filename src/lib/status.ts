@@ -58,6 +58,20 @@ function higherStage(a: FunnelStage | null, b: FunnelStage): FunnelStage {
   return stageRank(a) >= stageRank(b) ? a! : b;
 }
 
+/** Draft, then the funnel's stages: the order an application moves forward in. */
+const FORWARD: readonly ApplicationStatus[] = [ApplicationStatus.DRAFT, ...FUNNEL_STAGES];
+
+/**
+ * Whether moving from `from` to `to` goes back a stage (e.g. Interview →
+ * Sent), which lowers how far the application counts in the funnel, so the
+ * UI asks first. Rejected and Declined aren't on the way forward, so
+ * reopening one isn't a move back.
+ */
+export function isMoveBack(from: ApplicationStatus, to: ApplicationStatus): boolean {
+  const [was, will] = [FORWARD.indexOf(from), FORWARD.indexOf(to)];
+  return was >= 0 && will >= 0 && will < was;
+}
+
 /** "Heard back": the employer responded, so the furthest stage is Screening or later. */
 export function heardBack(application: { furthestStage: FunnelStage | null }): boolean {
   return stageRank(application.furthestStage) >= stageRank(FunnelStage.SCREENING);
