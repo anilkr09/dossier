@@ -81,9 +81,9 @@ Screens live in `src/app/(app)/<screen>/`: a server `page.tsx` that loads data, 
 - This checkout is the fork `github.com/anilkr09/dossier` (`origin`); `upstream` is `github.com/AienTech/dossier`.
 - When asked to commit, commit on `main` and push to `origin main`. Create a separate branch only when explicitly asked to.
 
-## QUESTIONS.md
+## Questions log
 
-Whenever the user's message is a question ending with "?", answer it, then add the question and a concise version of the answer to `QUESTIONS.md` (newest first: a `##` heading with the question, the date in italics, then the answer with file references).
+Whenever the user asks a question (about the code, the setup, or how something works), answer it and also append the question and answer to `QUESTIONS.md`: a `##` heading with the question, the date in italics, then the answer with file references. Newest at the bottom. Then commit and push it as described under Git workflow.
 
 ## Conventions
 
