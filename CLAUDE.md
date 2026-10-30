@@ -81,6 +81,10 @@ Screens live in `src/app/(app)/<screen>/`: a server `page.tsx` that loads data, 
 - This checkout is the fork `github.com/anilkr09/dossier` (`origin`); `upstream` is `github.com/AienTech/dossier`.
 - When asked to commit, commit on `main` and push to `origin main`. Create a separate branch only when explicitly asked to.
 
+## QUESTIONS.md
+
+Whenever the user's message is a question ending with "?", answer it, then add the question and a concise version of the answer to `QUESTIONS.md` (newest first: a `##` heading with the question, the date in italics, then the answer with file references).
+
 ## Conventions
 
 - Comments explain *why* and cite the plan item or issue they come from (`E7-2`, `NEW-3`, `#222`); match that style and the existing comment density.
