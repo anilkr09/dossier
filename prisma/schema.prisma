@@ -417,7 +417,7 @@ model Application {
   /// The prompt version that wrote `match`.
   matchedWith         String?
   status              ApplicationStatus @default(DRAFT)
-  /// The furthest stage ever reached; null while never sent. Only the status module changes it.
+  /// How far it got: the open status, or the furthest stage before it closed; null while a draft. Only the status module changes it.
   furthestStage       FunnelStage?
   sentAt              DateTime?
   /// When the next interview is, while the application is in Interview (E9-9); shown on the dashboard.

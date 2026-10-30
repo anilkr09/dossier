@@ -72,13 +72,26 @@ describe("advance", () => {
     expect(moves(draft, S.OFFER)).toEqual({ status: S.OFFER, furthestStage: "OFFER", sentAt: now });
   });
 
-  it("never lowers the furthest stage or changes the sent date when moving back", () => {
+  it("lowers the furthest stage, but keeps the sent date, when moving back to an earlier open stage", () => {
     const interview: StatusFields = { status: S.INTERVIEW, furthestStage: "INTERVIEW", sentAt: earlier };
-    expect(moves(interview, S.SCREENING, S.DRAFT)).toEqual({
-      status: S.DRAFT,
-      furthestStage: "INTERVIEW",
-      sentAt: earlier,
-    });
+    expect(moves(interview, S.SCREENING)).toEqual({ status: S.SCREENING, furthestStage: "SCREENING", sentAt: earlier });
+    expect(moves(interview, S.SENT)).toEqual({ status: S.SENT, furthestStage: "SENT", sentAt: earlier });
+  });
+
+  it("corrects the funnel when a status is moved forward and back again", () => {
+    expect(moves(draft, S.SENT, S.SCREENING, S.INTERVIEW, S.SENT)).toEqual({ status: S.SENT, furthestStage: "SENT", sentAt: now });
+    expect(moves(draft, S.SENT, S.INTERVIEW, S.SENT, S.INTERVIEW, S.SENT)).toEqual({ status: S.SENT, furthestStage: "SENT", sentAt: now });
+  });
+
+  it("takes an application moved back to Draft out of the funnel", () => {
+    const interview: StatusFields = { status: S.INTERVIEW, furthestStage: "INTERVIEW", sentAt: earlier };
+    expect(moves(interview, S.DRAFT)).toEqual({ status: S.DRAFT, furthestStage: null, sentAt: null });
+    expect(moves(interview, S.DRAFT, S.SENT)).toEqual({ status: S.SENT, furthestStage: "SENT", sentAt: now });
+  });
+
+  it("lets a closed application reopen at an earlier stage", () => {
+    const rejected: StatusFields = { status: S.REJECTED, furthestStage: "INTERVIEW", sentAt: earlier };
+    expect(moves(rejected, S.SCREENING)).toEqual({ status: S.SCREENING, furthestStage: "SCREENING", sentAt: earlier });
   });
 
   it("keeps the stage reached when an application is rejected or declined", () => {

@@ -50,6 +50,10 @@ function stageRank(stage: FunnelStage | null): number {
   return stage === null ? -1 : FUNNEL_STAGES.indexOf(stage);
 }
 
+function isFunnelStage(status: ApplicationStatus): status is ApplicationStatus & FunnelStage {
+  return (FUNNEL_STAGES as readonly string[]).includes(status);
+}
+
 function higherStage(a: FunnelStage | null, b: FunnelStage): FunnelStage {
   return stageRank(a) >= stageRank(b) ? a! : b;
 }
@@ -80,14 +84,18 @@ export type StatusChange = {
 };
 
 /**
- * Moves an application to `to`. Any status can move to any other, but the
- * furthest stage never goes down, so an application rejected after screening
- * still counts toward Screening (DSH-3).
+ * Moves an application to `to`. Any status can move to any other.
  *
- * Moving to anything but Draft or Declined means the application was sent:
- * it sets `sentAt` if it's empty and raises the furthest stage to at least
- * Sent. Draft → Declined leaves both alone, so a draft the user chose not to
- * send stays out of the funnel (decision in #26).
+ * While an application is in progress, its status is how far it got: moving
+ * it back to an earlier open stage is a correction, so the furthest stage
+ * comes down with it, and moving it back to Draft takes it out of the funnel
+ * and clears `sentAt`. Closing it never lowers the furthest stage, so an
+ * application rejected after screening still counts toward Screening (DSH-3).
+ *
+ * Closing it as anything but Declined means it was sent: it sets `sentAt` if
+ * it's empty and raises the furthest stage to at least Sent. Draft → Declined
+ * leaves both alone, so a draft the user chose not to send stays out of the
+ * funnel (decision in #26).
  *
  * Returns null when `to` is the current status: nothing to record.
  */
@@ -95,12 +103,18 @@ export function advance(application: StatusFields, to: ApplicationStatus, now: D
   if (application.status === to) return null;
 
   let { furthestStage, sentAt } = application;
-  if (to !== ApplicationStatus.DRAFT && to !== ApplicationStatus.DECLINED) {
+  if (to === ApplicationStatus.DRAFT) {
+    furthestStage = null;
+    sentAt = null;
+  } else if (isInProgress(to) && isFunnelStage(to)) {
     sentAt ??= now;
-    furthestStage = higherStage(furthestStage, FunnelStage.SENT);
-  }
-  if ((FUNNEL_STAGES as readonly string[]).includes(to)) {
-    furthestStage = higherStage(furthestStage, to as FunnelStage);
+    furthestStage = to;
+  } else {
+    if (to !== ApplicationStatus.DECLINED) {
+      sentAt ??= now;
+      furthestStage = higherStage(furthestStage, FunnelStage.SENT);
+    }
+    if (isFunnelStage(to)) furthestStage = higherStage(furthestStage, to);
   }
 
   return {
