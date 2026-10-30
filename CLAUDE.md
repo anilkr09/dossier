@@ -76,6 +76,11 @@ Screens live in `src/app/(app)/<screen>/`: a server `page.tsx` that loads data, 
 - `src/lib/connector` + `src/app/api/mcp`: the optional MCP server for Claude, with its own OAuth (`/api/oauth`).
 - `src/lib/pdf`: PDFs are printed by Playwright's headless Chromium from the `src/app/print` pages.
 
+## Git workflow
+
+- This checkout is the fork `github.com/anilkr09/dossier` (`origin`); `upstream` is `github.com/AienTech/dossier`.
+- When asked to commit, commit on `main` and push to `origin main`. Create a separate branch only when explicitly asked to.
+
 ## Conventions
 
 - Comments explain *why* and cite the plan item or issue they come from (`E7-2`, `NEW-3`, `#222`); match that style and the existing comment density.
