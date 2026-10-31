@@ -50,3 +50,9 @@ It's the `read-posting` background job (`src/lib/jobs/read-posting.ts`). It make
 | Comparing it with your profile | `matchRequirements` (`src/lib/ai/tasks/match-requirements.ts`): the model only says which profile skill or language each requirement is about; code decides covered / partial / gap. "N years" requirements are computed from experience dates with no AI call |
 
 "This can take a little longer on a local model" is always shown while the job runs. The result waits in the job row for the review screen; the next job (`writeDocumentsJob`) writes the documents, and only `createApplication` saves the Application.
+
+## Do we still have the architecture review report?
+
+_2026-10-31_
+
+No. The `/improve-codebase-architecture` run on 2026-10-30 wrote it to the macOS temp folder (`$TMPDIR/architecture-review-20261030-201837.html`, under `/var/folders/…/T/`) so it wouldn't land in the repo, and macOS clears that folder, so the file is gone. Its seven candidates were: make the status change module the only way in (top recommendation; the Gmail send path skips the "approve a pending agent draft" rule), one Document module for units, trimmed parts and versions, one home for unit kinds, application creation, one setup for background jobs and one posting-scoring path, one description per profile section, and shared fetch / HTML-to-text code. To keep a report, save it outside the temp folder.
