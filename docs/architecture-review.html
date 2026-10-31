@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dossier Architecture Review</title>
+    <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { curve: "basis" } });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .leak { stroke: #dc2626; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; }
+      .schematic { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; }
+      .diagram { min-height: 300px; }
+      pre.mermaid { background: transparent; display: flex; justify-content: center; }
+      .faded { opacity: 0.55; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans antialiased">
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-12 space-y-14">
+      <header class="space-y-4">
+        <p class="schematic text-slate-500">Architecture review · 30 Oct 2026 · fork anilkr09/dossier @ a1ab921 (Dossier 1.10.0)</p>
+        <h1 class="font-serif text-4xl">Dossier: deepening opportunities</h1>
+        <div class="flex flex-wrap gap-5 text-sm text-slate-600 items-center">
+          <span class="flex items-center gap-2"><span class="inline-block w-6 h-4 border-2 border-slate-500 bg-white"></span>module</span>
+          <span class="flex items-center gap-2"><svg width="30" height="8"><line x1="0" y1="4" x2="30" y2="4" stroke="#475569" stroke-width="2" class="seam"/></svg>seam</span>
+          <span class="flex items-center gap-2"><svg width="30" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="#dc2626" stroke-width="2"/><path d="M22 1 L30 5 L22 9 Z" fill="#dc2626"/></svg>leak across a seam</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-6 h-4 deep rounded-sm"></span>deep module</span>
+        </div>
+        <p class="text-sm text-slate-500">Scope: hot spots by file churn across 23 squashed releases: application documents, status, application creation, background jobs, job discovery, profile. No GLOSSARY.md or ADRs exist; domain terms come from the code and DEVELOPMENT.md.</p>
+      </header>
+
+      <section id="candidates" class="space-y-12">
+
+        <!-- 1. STATUS -->
+        <article id="status" class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 space-y-6 shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="schematic text-slate-400">01</span>
+            <span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-0.5 text-xs font-semibold">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 px-3 py-0.5 text-xs">local-substitutable</span>
+            <span class="rounded-full bg-red-50 text-red-700 px-3 py-0.5 text-xs">likely bug</span>
+          </div>
+          <h2 class="font-serif text-2xl">Make the Status change module the only way in</h2>
+          <ul class="font-mono text-sm text-slate-600 space-y-0.5">
+            <li>src/lib/status-actions.ts</li>
+            <li>src/lib/status-changes.ts</li>
+            <li>src/lib/google/send.ts:88 · src/lib/google/actions.ts:233, 257</li>
+            <li>src/lib/connector/tools.ts:464–469</li>
+          </ul>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-2">Before</p>
+              <pre class="mermaid">
+flowchart TB
+  UI["setStatus action"] --> AP["approve pending agent draft"]
+  AP --> SC["applyStatusChange"]
+  MCP["Connector tool"] --> AP2["approve rule, pasted copy"]
+  AP2 --> SC
+  GS["Gmail send"] --> SC
+  GA["Suggested status / Interview"] --> SC
+  SC --> DB[("Application + StatusEvent")]
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#991b1b;
+  class GS,GA,AP2 leak
+  linkStyle 4,5 stroke:#dc2626,stroke-width:2px;
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-2">After</p>
+              <pre class="mermaid">
+flowchart TB
+  UI["setStatus action"] --> M
+  MCP["Connector tool"] --> M
+  GS["Gmail send"] --> M
+  GA["Suggested status / Interview"] --> M
+  subgraph M["Status change module"]
+    direction TB
+    a["approve pending draft"] --> b["record StatusEvent"] --> c["refresh pages"]
+  end
+  M --> DB[("Application + StatusEvent")]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a;
+  class M deep
+              </pre>
+            </div>
+          </div>
+          <dl class="grid sm:grid-cols-[7rem_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt class="font-semibold">Problem</dt>
+            <dd>The rule "moving an agent draft approves it" lives in the action, not the module, so Gmail send moves a pending draft to SENT with <code class="font-mono">awaitingReview</code> still true and every list hides it.</dd>
+            <dt class="font-semibold">Solution</dt>
+            <dd>Move the approve rule (and page refresh) behind <code class="font-mono">applyStatusChange</code>; all four callers cross one seam.</dd>
+          </dl>
+          <ul class="flex flex-wrap gap-2 text-sm">
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Locality: one rule, one place</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Gmail path gets the rule free</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Delete pasted copy in connector</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Delete 3× refreshEverything</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Tests hit one interface</li>
+          </ul>
+        </article>
+
+        <!-- 2. DOCUMENT -->
+        <article id="document" class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 space-y-6 shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="schematic text-slate-400">02</span>
+            <span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-0.5 text-xs font-semibold">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 px-3 py-0.5 text-xs">local-substitutable</span>
+          </div>
+          <h2 class="font-serif text-2xl">One Document module: Units, Trimmed and Versions together</h2>
+          <ul class="font-mono text-sm text-slate-600 space-y-0.5">
+            <li>src/lib/document-units.ts · document-versions.ts · application-documents.ts</li>
+            <li>src/lib/application-data.ts (unitsSchema, trimmedSchema)</li>
+            <li>src/app/(app)/applications/[id]/actions.ts:363–405, 448–476</li>
+            <li>src/lib/page-limit.ts:102–116 · jobs/refine.ts · jobs/write-email.ts · application-create.ts · data-import.ts</li>
+          </ul>
+          <div class="grid md:grid-cols-2 gap-4">
+            <!-- Cross-section before -->
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-3">Before: a Server Action leaves out a Unit</p>
+              <div class="space-y-1.5">
+                <div class="h-10 border-l-4 border-slate-400 bg-slate-50 px-3 flex items-center justify-between"><span class="schematic">leaveOutUnit action</span><span class="text-xs text-slate-400">orchestrates</span></div>
+                <div class="h-10 border-l-4 border-slate-400 bg-slate-50 px-3 flex items-center justify-between"><span class="schematic">unitsSchema.parse</span><span class="text-xs text-slate-400">~20 call sites</span></div>
+                <div class="h-10 border-l-4 border-slate-700 bg-slate-100 px-3 flex items-center justify-between"><span class="schematic">updateDocuments tx</span><span class="text-xs text-slate-500">retry on conflict</span></div>
+                <div class="h-10 border-l-4 border-slate-400 bg-slate-50 px-3 flex items-center justify-between"><span class="schematic">saveVersion</span><span class="text-xs text-slate-400">36 lines, untested</span></div>
+                <div class="h-10 border-l-4 border-red-500 bg-red-50 px-3 flex items-center justify-between"><span class="schematic text-red-800">document.trimmed write</span><span class="text-xs text-red-700">outside the tx</span></div>
+                <div class="h-10 border-l-4 border-slate-400 bg-slate-50 px-3 flex items-center justify-between"><span class="schematic">fitResumeToPages</span><span class="text-xs text-slate-400">its own trimmed write</span></div>
+              </div>
+            </div>
+            <!-- Cross-section after -->
+            <div class="rounded-lg border border-slate-200 p-4 diagram flex flex-col">
+              <p class="schematic text-slate-500 mb-3">After</p>
+              <div class="h-10 border-l-4 border-slate-400 bg-slate-50 px-3 flex items-center"><span class="schematic">leaveOutUnit action</span></div>
+              <div class="mt-1.5 flex-1 deep rounded-md p-4 flex flex-col justify-between">
+                <span class="schematic">Document module · edit(applicationId, change)</span>
+                <div class="grid grid-cols-2 gap-2 text-[0.65rem] uppercase tracking-wider">
+                  <span class="faded border border-slate-500 rounded px-2 py-1">parse Units</span>
+                  <span class="faded border border-slate-500 rounded px-2 py-1">Trimmed list</span>
+                  <span class="faded border border-slate-500 rounded px-2 py-1">conflict retry</span>
+                  <span class="faded border border-slate-500 rounded px-2 py-1">DocumentVersion</span>
+                </div>
+                <span class="text-xs text-slate-300">Units + Trimmed + Version in one transaction</span>
+              </div>
+            </div>
+          </div>
+          <dl class="grid sm:grid-cols-[7rem_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt class="font-semibold">Problem</dt>
+            <dd>A Document's state is split across four modules and every caller re-parses Units; the Trimmed list is written after the guarded transaction, so a concurrent edit can lose a "Put back".</dd>
+            <dt class="font-semibold">Solution</dt>
+            <dd>Deepen <code class="font-mono">updateDocuments</code> into a Document module that owns Units, Trimmed and Versions, with Postgres behind it.</dd>
+          </dl>
+          <ul class="flex flex-wrap gap-2 text-sm">
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Trimmed joins the transaction</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Leverage: ~20 parse sites collapse</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Delete 2 private unitsOf helpers</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Versions tested through interface</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">actions.ts shrinks to orchestration</li>
+          </ul>
+        </article>
+
+        <!-- 3. UNIT KINDS -->
+        <article id="unit-kinds" class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 space-y-6 shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="schematic text-slate-400">03</span>
+            <span class="rounded-full bg-amber-100 text-amber-800 px-3 py-0.5 text-xs font-semibold">Worth exploring</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 px-3 py-0.5 text-xs">in-process</span>
+          </div>
+          <h2 class="font-serif text-2xl">Give Unit kinds one home</h2>
+          <ul class="font-mono text-sm text-slate-600 space-y-0.5">
+            <li>src/lib/unit-text.ts · letter-frame.ts · application-email.ts · application-data.ts</li>
+            <li>applications/[id]/application-view.tsx:514–517 ↔ actions.ts:146–153</li>
+            <li>ai/tasks/write-cover-letter.ts:107 ↔ connector/write.ts:128</li>
+            <li>ai/tasks/refine-chat.ts · ai/tasks/regenerate-unit.ts · page-limit.ts</li>
+          </ul>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 p-4 diagram relative">
+              <p class="schematic text-slate-500 mb-3">Before: id-prefix rules scattered over 10 files</p>
+              <div class="grid grid-cols-3 gap-2 text-[0.65rem] uppercase tracking-wider">
+                <div class="border-2 border-slate-400 rounded p-2 text-center">view.tsx<br/><span class="text-red-600 normal-case tracking-normal">canRegenerate</span></div>
+                <div class="border-2 border-slate-400 rounded p-2 text-center">actions.ts<br/><span class="text-red-600 normal-case tracking-normal">canRegenerate</span></div>
+                <div class="border-2 border-slate-400 rounded p-2 text-center">page-limit<br/><span class="normal-case tracking-normal">"experience:"</span></div>
+                <div class="border-2 border-slate-400 rounded p-2 text-center">cover-letter<br/><span class="text-red-600 normal-case tracking-normal">keep frame</span></div>
+                <div class="border-2 border-slate-400 rounded p-2 text-center">connector<br/><span class="text-red-600 normal-case tracking-normal">keep frame</span></div>
+                <div class="border-2 border-slate-400 rounded p-2 text-center">refine-chat<br/><span class="normal-case tracking-normal">"paragraph:"</span></div>
+                <div class="border-2 border-slate-400 rounded p-2 text-center">unit-text<br/><span class="normal-case tracking-normal">isBullet…</span></div>
+                <div class="border-2 border-slate-400 rounded p-2 text-center">letter-frame<br/><span class="normal-case tracking-normal">WRITTEN/PRIVATE</span></div>
+                <div class="border-2 border-slate-400 rounded p-2 text-center">email<br/><span class="normal-case tracking-normal">to/subject/body</span></div>
+              </div>
+              <p class="text-xs text-red-700 mt-3">Red = the same rule written twice, client and server.</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 p-4 diagram flex flex-col gap-3">
+              <p class="schematic text-slate-500">After</p>
+              <div class="grid grid-cols-3 gap-2 text-[0.65rem] uppercase tracking-wider text-slate-500">
+                <div class="border border-slate-300 rounded p-2 text-center">view.tsx</div>
+                <div class="border border-slate-300 rounded p-2 text-center">actions.ts</div>
+                <div class="border border-slate-300 rounded p-2 text-center">ai tasks</div>
+              </div>
+              <svg viewBox="0 0 300 24" class="w-full h-6"><line x1="0" y1="12" x2="300" y2="12" stroke="#475569" stroke-width="2" class="seam"/></svg>
+              <div class="deep rounded-md p-4 flex-1 flex flex-col justify-between">
+                <span class="schematic">Unit kind module · kindOf(unit) → what it can do</span>
+                <div class="flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-wider">
+                  <span class="faded border border-slate-500 rounded px-2 py-1">regenerable</span>
+                  <span class="faded border border-slate-500 rounded px-2 py-1">frame: written / private</span>
+                  <span class="faded border border-slate-500 rounded px-2 py-1">trimmable</span>
+                  <span class="faded border border-slate-500 rounded px-2 py-1">fact-guarded</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <dl class="grid sm:grid-cols-[7rem_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt class="font-semibold">Problem</dt>
+            <dd>What a Unit may do is coded in id prefixes, and rules like "can the AI regenerate this" are restated on the client and server.</dd>
+            <dt class="font-semibold">Solution</dt>
+            <dd>Pure module that classifies a Unit and answers every capability question; client and server both import it.</dd>
+          </dl>
+          <ul class="flex flex-wrap gap-2 text-sm">
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Client and server cannot drift</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Pure, table-driven tests</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">New Unit kind: one edit</li>
+          </ul>
+        </article>
+
+        <!-- 4. CREATION -->
+        <article id="creation" class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 space-y-6 shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="schematic text-slate-400">04</span>
+            <span class="rounded-full bg-amber-100 text-amber-800 px-3 py-0.5 text-xs font-semibold">Worth exploring</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 px-3 py-0.5 text-xs">mock (AI) + local-substitutable</span>
+          </div>
+          <h2 class="font-serif text-2xl">Pull caller concerns out of Application creation</h2>
+          <ul class="font-mono text-sm text-slate-600 space-y-0.5">
+            <li>src/lib/application-create.ts (claim: manual | agent | none)</li>
+            <li>src/app/(app)/new/actions.ts · new-application.tsx:78</li>
+            <li>src/lib/agent/draft.ts:49, 85–105 · src/lib/connector/draft.ts:18, 42–58</li>
+            <li>src/lib/jobs/read-posting.ts · jobs/write-documents.ts</li>
+          </ul>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-2">Before</p>
+              <pre class="mermaid">
+flowchart TB
+  N["New page: 3 actions"] --> RP["readPostingJob"]
+  AG["Agent draft"] -->|".run() direct"| RP
+  CN["Connector draft"] -->|".run() direct"| RP
+  RP --> WD["writeDocumentsJob"]
+  WD --> C["createApplicationFromDocuments"]
+  C -.->|"claim: job key"| N
+  C -.->|"claim: AgentCandidate"| AG
+  C --> FIT["fitResumeToPages"]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class C leak
+  linkStyle 5,6 stroke:#dc2626,stroke-width:2px;
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-2">After</p>
+              <pre class="mermaid">
+flowchart TB
+  N["New page"] --> M
+  AG["Agent draft"] --> M
+  CN["Connector draft"] --> M
+  subgraph M["Application drafting module"]
+    direction TB
+    r["read Posting"] --> w["write Documents"] --> s["save + fit pages"]
+  end
+  M -->|"onCreated(tx)"| AG
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a;
+  class M deep
+              </pre>
+            </div>
+          </div>
+          <dl class="grid sm:grid-cols-[7rem_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt class="font-semibold">Problem</dt>
+            <dd>Three entry points stitch read → write → create by hand, and each one's bookkeeping (job claim, AgentCandidate move) leaks into the creation transaction.</dd>
+            <dt class="font-semibold">Solution</dt>
+            <dd>One drafting module owns the pipeline; caller-specific bookkeeping stays with the caller.</dd>
+          </dl>
+          <ul class="flex flex-wrap gap-2 text-sm">
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Delete 3× detailsFrom</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Delete duplicated CLAIMED constant</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Agent/Connector stop driving jobs</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">MockProvider tests, fewer mocks</li>
+          </ul>
+        </article>
+
+        <!-- 5. JOB CONTEXT / SCORING -->
+        <article id="job-context" class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 space-y-6 shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="schematic text-slate-400">05</span>
+            <span class="rounded-full bg-amber-100 text-amber-800 px-3 py-0.5 text-xs font-semibold">Worth exploring</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 px-3 py-0.5 text-xs">mock (AI provider)</span>
+          </div>
+          <h2 class="font-serif text-2xl">One writing context for background Jobs, one Posting scoring path</h2>
+          <ul class="font-mono text-sm text-slate-600 space-y-0.5">
+            <li>src/lib/jobs/* (7 files) · src/lib/agent/run.ts:120–147 · src/lib/google/sync.ts:170</li>
+            <li>src/lib/jobs/score-posting.ts:33–40 · src/lib/posting-scores.ts (14 lines)</li>
+            <li>src/lib/connector/tools.ts (scoreFrom + saveScore)</li>
+          </ul>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-3">Before: same gather, 9 places</p>
+              <div class="space-y-2">
+                <div class="grid grid-cols-[6rem_1fr] gap-2 items-center text-[0.65rem] uppercase tracking-wider">
+                  <span>9 Job bodies</span>
+                  <div class="flex flex-wrap gap-1">
+                    <span class="border border-slate-400 rounded px-1.5 py-0.5">getAiProvider</span>
+                    <span class="border border-slate-400 rounded px-1.5 py-0.5">loadTaskOptions</span>
+                    <span class="border border-slate-400 rounded px-1.5 py-0.5">loadProfile</span>
+                    <span class="border border-slate-400 rounded px-1.5 py-0.5">loadFactTexts</span>
+                  </div>
+                </div>
+                <div class="grid grid-cols-[6rem_1fr] gap-2 items-center text-[0.65rem] uppercase tracking-wider">
+                  <span>each test</span>
+                  <div class="flex flex-wrap gap-1 text-red-700">
+                    <span class="border border-red-300 bg-red-50 rounded px-1.5 py-0.5">vi.mock ai</span>
+                    <span class="border border-red-300 bg-red-50 rounded px-1.5 py-0.5">vi.mock task-options</span>
+                    <span class="border border-red-300 bg-red-50 rounded px-1.5 py-0.5">vi.mock profile-data</span>
+                    <span class="border border-red-300 bg-red-50 rounded px-1.5 py-0.5">vi.mock runner</span>
+                  </div>
+                </div>
+                <div class="grid grid-cols-[6rem_1fr] gap-2 items-center text-[0.65rem] uppercase tracking-wider">
+                  <span>scoring</span>
+                  <div class="flex flex-wrap gap-1">
+                    <span class="border border-slate-400 rounded px-1.5 py-0.5">score-posting job</span>
+                    <span class="border border-slate-400 rounded px-1.5 py-0.5">agent run</span>
+                    <span class="border border-slate-400 rounded px-1.5 py-0.5">connector</span>
+                    <span class="text-slate-400">→ saveScore ×3</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 p-4 diagram flex flex-col gap-3">
+              <p class="schematic text-slate-500">After</p>
+              <div class="deep rounded-md p-4">
+                <span class="schematic">Writing context · loaded once per Job</span>
+                <p class="text-xs text-slate-300 mt-1">provider, Tone/Creativity/strict, Profile, Facts</p>
+              </div>
+              <svg viewBox="0 0 300 24" class="w-full h-6"><line x1="0" y1="12" x2="300" y2="12" stroke="#475569" stroke-width="2" class="seam"/></svg>
+              <p class="text-xs text-slate-600">Two adapters: Postgres-backed in production, a plain object in tests.</p>
+              <div class="deep rounded-md p-4">
+                <span class="schematic">Posting scoring · score(posting, context)</span>
+                <p class="text-xs text-slate-300 mt-1">Job, Agent, Connector share one path; posting-scores.ts absorbed</p>
+              </div>
+            </div>
+          </div>
+          <dl class="grid sm:grid-cols-[7rem_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt class="font-semibold">Problem</dt>
+            <dd>Every Job re-gathers the same four inputs, so tests reach past the interface with 4–5 module mocks; Posting scoring has three call paths.</dd>
+            <dt class="font-semibold">Solution</dt>
+            <dd>Pass a writing context into Jobs; fold the three scoring paths into one module.</dd>
+          </dl>
+          <ul class="flex flex-wrap gap-2 text-sm">
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Tests stop mocking 4 modules</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Real seam: two adapters</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Delete 14-line pass-through</li>
+          </ul>
+          <p class="text-sm text-slate-500">The AI provider seam itself is already deep: 5 real provider adapters plus Mock. Leave it alone.</p>
+        </article>
+
+        <!-- 6. PROFILE SECTIONS -->
+        <article id="profile" class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 space-y-6 shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="schematic text-slate-400">06</span>
+            <span class="rounded-full bg-amber-100 text-amber-800 px-3 py-0.5 text-xs font-semibold">Worth exploring</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 px-3 py-0.5 text-xs">local-substitutable</span>
+          </div>
+          <h2 class="font-serif text-2xl">One Profile section module behind CRUD, export, import and delete</h2>
+          <ul class="font-mono text-sm text-slate-600 space-y-0.5">
+            <li>src/app/(app)/profile/actions.ts (531 lines, 56 Prisma calls) · src/lib/fact-actions.ts</li>
+            <li>src/lib/profile-data.ts:21–28 · profile-import-apply.ts:25–32</li>
+            <li>src/lib/data-export.ts:378–409 · data-import.ts:92–137 · settings/actions.ts:241–268</li>
+          </ul>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-3">Before: interface ≈ implementation, ×6</p>
+              <div class="flex items-end gap-3 h-52">
+                <div class="flex flex-col items-center gap-1"><div class="flex items-end gap-0.5"><div class="w-4 h-24 bg-slate-400"></div><div class="w-4 h-28 bg-slate-200"></div></div><span class="text-[0.6rem] uppercase">Experience</span></div>
+                <div class="flex flex-col items-center gap-1"><div class="flex items-end gap-0.5"><div class="w-4 h-24 bg-slate-400"></div><div class="w-4 h-28 bg-slate-200"></div></div><span class="text-[0.6rem] uppercase">Project</span></div>
+                <div class="flex flex-col items-center gap-1"><div class="flex items-end gap-0.5"><div class="w-4 h-24 bg-slate-400"></div><div class="w-4 h-28 bg-slate-200"></div></div><span class="text-[0.6rem] uppercase">Education</span></div>
+                <div class="flex flex-col items-center gap-1"><div class="flex items-end gap-0.5"><div class="w-4 h-24 bg-slate-400"></div><div class="w-4 h-28 bg-slate-200"></div></div><span class="text-[0.6rem] uppercase">Publication</span></div>
+                <div class="flex flex-col items-center gap-1"><div class="flex items-end gap-0.5"><div class="w-4 h-24 bg-slate-400"></div><div class="w-4 h-28 bg-slate-200"></div></div><span class="text-[0.6rem] uppercase">Reference</span></div>
+                <div class="flex flex-col items-center gap-1"><div class="flex items-end gap-0.5"><div class="w-4 h-24 bg-slate-400"></div><div class="w-4 h-28 bg-slate-200"></div></div><span class="text-[0.6rem] uppercase">Fact</span></div>
+              </div>
+              <p class="text-xs text-slate-500 mt-2"><span class="inline-block w-3 h-3 bg-slate-400 align-middle"></span> interface <span class="inline-block w-3 h-3 bg-slate-200 align-middle ml-2"></span> implementation. Plus 5 hand-kept table lists.</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-3">After</p>
+              <div class="flex items-end gap-6 h-52 pl-6">
+                <div class="flex flex-col items-center gap-1"><div class="flex items-end gap-0.5"><div class="w-8 h-8 bg-slate-800"></div><div class="w-8 h-48 deep"></div></div><span class="text-[0.6rem] uppercase">Profile sections</span></div>
+                <div class="text-xs text-slate-600 space-y-1 pb-6">
+                  <p>One section table drives:</p>
+                  <p class="font-mono">create · save · remove · restore · sort</p>
+                  <p class="font-mono">load · export · import · delete-all</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <dl class="grid sm:grid-cols-[7rem_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt class="font-semibold">Problem</dt>
+            <dd>Six near-identical CRUD blocks wrap Prisma 1:1, and five separate lists name the Profile tables, so a new section means editing at least four files.</dd>
+            <dt class="font-semibold">Solution</dt>
+            <dd>Describe each Profile section once; CRUD, load, export, import and delete-all read from that.</dd>
+          </dl>
+          <ul class="flex flex-wrap gap-2 text-sm">
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Locality: new section, one edit</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Export/import cannot miss a table</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">One test suite, six sections</li>
+          </ul>
+        </article>
+
+        <!-- 7. STARTUP SOURCES -->
+        <article id="startups" class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 space-y-6 shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="schematic text-slate-400">07</span>
+            <span class="rounded-full bg-slate-200 text-slate-700 px-3 py-0.5 text-xs font-semibold">Speculative</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 px-3 py-0.5 text-xs">mock (job boards)</span>
+          </div>
+          <h2 class="font-serif text-2xl">Share the fetch-and-read-HTML module across Sources, Startups and Posting fetch</h2>
+          <ul class="font-mono text-sm text-slate-600 space-y-0.5">
+            <li>src/lib/job-search/http.ts · job-search/text.ts</li>
+            <li>src/lib/startups/http.ts · startups/text.ts · startups/refresh.ts:36–39</li>
+            <li>src/lib/posting-fetch.ts</li>
+          </ul>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-2">Before</p>
+              <pre class="mermaid">
+flowchart LR
+  JS["Job Sources ×4"] --> H1["requestJson"] --> T1["plainText"]
+  ST["Startups: HN, YC"] --> H2["getText"] --> T2["htmlToText (regex)"]
+  PF["Posting fetch"] --> H3["fetchHtml"] --> T3["postingFromHtml"]
+  classDef dup stroke:#dc2626,stroke-width:2px;
+  class H1,H2,H3,T1,T2,T3 dup
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 p-4 diagram">
+              <p class="schematic text-slate-500 mb-2">After</p>
+              <pre class="mermaid">
+flowchart LR
+  JS["Job Sources ×4"] --> W
+  ST["Startup sources"] --> W
+  PF["Posting fetch"] --> W
+  W["Web reading module: fetch, timeouts, test base URL, HTML to text"]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a;
+  class W deep
+              </pre>
+            </div>
+          </div>
+          <dl class="grid sm:grid-cols-[7rem_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt class="font-semibold">Problem</dt>
+            <dd>Three HTTP helpers and three HTML-to-text routines; four ways to point at a test base URL; Startup refresh has no test.</dd>
+            <dt class="font-semibold">Solution</dt>
+            <dd>One web reading module with stubFetch as its test adapter.</dd>
+          </dl>
+          <ul class="flex flex-wrap gap-2 text-sm">
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">One test-URL mechanism</li>
+            <li class="rounded-md bg-emerald-50 text-emerald-900 px-3 py-1">Startups become testable</li>
+          </ul>
+          <p class="text-sm text-slate-500">The Job Source seam (4 adapters behind job-search/index.ts) is already deep; this candidate is only about what sits underneath it.</p>
+        </article>
+      </section>
+
+      <section id="top-recommendation" class="rounded-2xl deep p-8 space-y-3">
+        <p class="schematic text-slate-400">Top recommendation</p>
+        <h2 class="font-serif text-3xl"><a href="#status" class="underline decoration-emerald-400 underline-offset-4">01 · Make the Status change module the only way in</a></h2>
+        <p class="text-slate-300 max-w-3xl">Smallest change with the clearest payoff: it closes a likely bug (Gmail send can mark a pending agent draft SENT while it stays hidden from every list), the module and its <code class="font-mono">*.db.test.ts</code> already exist, and it sets the pattern for 02, the larger Document module.</p>
+      </section>
+    </main>
+  </body>
+</html>
